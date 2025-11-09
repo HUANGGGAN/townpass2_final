@@ -1,0 +1,168 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// CCTV 攝影機（原 Place model，現在專門存 CCTV）
+model Place {
+  id          Int      @id @default(autoincrement())
+  uuid        String   @unique @default(uuid())
+  name        String?
+  latitude    Float
+  longitude   Float
+  address     String?
+  phone       String?
+  description String?
+  owner       String?  // 擁有者/管理單位
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([latitude, longitude])
+  @@index([uuid])
+  @@map("places")
+}
+
+// 格網：用於熱點圖計算
+model Grid {
+  id        Int      @id @default(autoincrement())
+  uuid      String   @unique @default(uuid())
+  gridId    String   @unique // 格式：lat_grid_lng_grid (例如: 25_121)
+  centerLat Float
+  centerLng Float
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  signals SafetySignal[]
+
+  @@index([gridId])
+  @@map("grids")
+}
+
+// 匿名安全感信號
+model SafetySignal {
+  id        Int      @id @default(autoincrement())
+  uuid      String   @unique @default(uuid())
+  gridId   Int
+  grid     Grid     @relation(fields: [gridId], references: [id])
+  signal   SignalType
+  timeslot DateTime // 時間窗（例如：每小時一個時段）
+  createdAt DateTime @default(now())
+
+  @@index([gridId, timeslot])
+  @@index([timeslot])
+  @@map("safety_signals")
+}
+
+enum SignalType {
+  unsafe // 安全感低
+  ok     // 安全感正常
+}
+
+// 安全地點（警局/消防/避難所等）
+model SafePlace {
+  id        Int       @id @default(autoincrement())
+  uuid      String    @unique @default(uuid())
+  lat       Float
+  lng       Float
+  name      String
+  type      SafePlaceType // 類型：警局/消防/避難所
+  address   String?   // 地址
+  phone     String?   // 電話
+  timeStart DateTime? // 營業開始時間
+  timeEnd   DateTime? // 營業結束時間
+  is24h     Boolean   @default(false) // 是否 24 小時開放
+  description String? // 描述
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([lat, lng])
+  @@index([type])
+  @@map("safe_place")
+}
+
+enum SafePlaceType {
+  police  // 警局
+  fire    // 消防
+  shelter // 避難所
+}
+
+// CCTV 攝影機
+model Cctv {
+  id        Int      @id @default(autoincrement())
+  uuid      String   @unique // UUID
+  lat       Float
+  lng       Float
+  owner     String   // 擁有者/管理單位
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([lat, lng])
+  @@index([uuid])
+  @@map("cctv")
+}
+
+// 不安全地點標記
+model NotSafe {
+  id        Int      @id @default(autoincrement())
+  uuid      String   @unique @default(uuid())
+  lng       Float
+  lat       Float
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([lat, lng])
+  @@map("not_safe")
+}
+
+// 身份驗證資訊（用於驗證前端傳來的身份資料）
+model Identity {
+  id        Int      @id @default(autoincrement())
+  account   String   @unique // 帳號
+  uuid      String   @unique // 用戶 UUID
+  name      String   // 真實姓名
+  idNo      String   // 身份證字號
+  count     Int      @default(0) // 該使用者上傳的點位數量（用於 O(1) 計算 alpha）
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([account])
+  @@index([uuid])
+  @@index([idNo])
+  @@map("identity")
+}
+
+// 危險點位類型
+enum DangerPointType {
+  light      // 輕微
+  few        // 少量
+  monitor    // 監控
+  dangerous  // 危險
+}
+
+// 危險點位（用於 DBSCAN 聚類分析）
+// 注意：geom 欄位需要在資料庫中手動添加，因為 Prisma 不支援 PostGIS geometry 類型
+model DangerPoint {
+  id        Int            @id @default(autoincrement())
+  uuid      String         // 使用者識別碼（對應 Identity.uuid，手動管理關係）
+  uuuid     String         @unique @default(uuid()) // 資料點唯一識別碼
+  alpha     Float          // 係數，自動計算：1 / 該使用者的總點數
+  type      DangerPointType // 點位類型：light, few, monitor, dangerous
+  time      DateTime       // 記錄時間
+  lat       Float          // 緯度 WGS84
+  lng       Float          // 經度 WGS84
+  // geom 欄位使用原生 SQL 在資料庫中創建：geometry(Point,3826)
+  createdAt DateTime       @default(now())
+
+  @@index([uuid])
+  @@index([lat, lng])
+  @@index([type])
+  @@map("danger_points")
+}
+

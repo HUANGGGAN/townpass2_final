@@ -1,0 +1,71 @@
+version: '3.8'
+
+services:
+  # --- Backend Application Service ---
+  app:
+    build: .
+    container_name: townpass_backend
+    ports:
+      # Map container port 3000 to host port 3000 (or use variable ${PORT})
+      - "3000:${PORT}"
+    
+    # Use environment variables from the .env file
+    # PGHOST is overridden to point to the 'db' service name
+    environment:
+      # Database connection variables (internal Docker network host)
+      PGHOST: db 
+      PGPORT: ${PGPORT}
+      PGUSER: ${PGUSER}
+      PGPASSWORD: ${PGPASSWORD}
+      PGDATABASE: ${PGDATABASE}
+      
+      # Construct the full DATABASE_URL for the app to use
+      DATABASE_URL: "postgresql://${PGUSER}:${PGPASSWORD}@db:${PGPORT}/${PGDATABASE}?schema=public"
+      
+      # Application Variables
+      PORT: ${PORT}
+      API_PREFIX: ${API_PREFIX}
+      REDIS_ENABLED: ${REDIS_ENABLED}
+      SESSION_SECRET: ${SESSION_SECRET}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN}
+      JWT_ISSUER: ${JWT_ISSUER}
+      JWT_AUDIENCE: ${JWT_AUDIENCE}
+      RATE_LIMIT_WINDOW_MS: ${RATE_LIMIT_WINDOW_MS}
+      RATE_LIMIT_MAX_REQUESTS: ${RATE_LIMIT_MAX_REQUESTS}
+      GRID_SIZE_KM: ${GRID_SIZE_KM}
+      CORS_ORIGIN: ${CORS_ORIGIN}
+      GOOGLE_MAPS_API_KEY: ${GOOGLE_MAPS_API_KEY}
+      ALLOW_SELF_SIGNED_CERT: ${ALLOW_SELF_SIGNED_CERT}
+    
+    # Ensure the app starts only after the database is ready
+    depends_on:
+      db:
+        condition: service_healthy
+  
+  # --- PostgreSQL Database Service ---
+  db:
+    image: postgres:16-alpine
+    container_name: townpass_postgres
+    ports:
+      # Expose port 5432 on the host for local access/tools
+      - "5433:${PGPORT}"
+      
+    environment:
+      POSTGRES_USER: ${PGUSER}
+      POSTGRES_PASSWORD: ${PGPASSWORD}
+      POSTGRES_DB: ${PGDATABASE}
+      
+    volumes:
+      # Persistent storage for database data
+      - postgres_data:/var/lib/postgresql/data/
+      
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+# --- Volumes for Persistence ---
+volumes:
+  postgres_data:
